@@ -1,7 +1,7 @@
-classdef My
+classdef LRTLS
     properties
         % 基本参数
-        name = 'My';
+        name = 'LRTLS';
         max_iter = 200;
         tol = 1e-3;
         toleration = 1e-9;
@@ -50,7 +50,7 @@ classdef My
     end
     
     methods
-        function obj = My()
+        function obj = LRTLS()
             obj.Err = NaN(3,obj.max_iter);
         end
 
