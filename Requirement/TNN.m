@@ -1,30 +1,81 @@
-function G = TNN(R,ref,fhandle,G)
+function [G,f] = TNN(R,ref,fhandle,p,tol,max_iter)
+    % R : d * n * Views
+    if nargin < 5
+        tol = 1e-4; 
+    end
+    if nargin < 6
+        max_iter = 100;
+    end
 
-        [~, ~, n3] = size(R);
-        if isscalar(ref)
-            ref = repmat(ref, 1, n3);
-        end
+    % 调整维度
+    R = shiftdim(R,2);
+    [~, ~, n3] = size(R);
+    if isscalar(ref)
+        ref = repmat(ref, 1, n3);
+    end
 
-        Rf = fft(R, [], 3); % t-SVD 是在频域上定义的，首先对张量 Q 做傅里叶变换：
-        Gf = zeros(size(Rf));
-        if nargin >= 4
-            Gf = fft(G, [], 3);
-        end
+    % FFT
+    Rf = fft(R, [], 3); 
+    Gf = zeros(size(Rf));
 
-        for i = 1:n3
-            [U, S, V] = svd(Rf(:,:,i), 'econ');
-            s = diag(S);
-            if nargin >= 3
-                [~, Sg, ~] = svd(Gf(:,:,i), 'econ');
-                sg = diag(Sg);
-                [~,sg] = fhandle(sg); 
-                new_vals = max(s - ref(i)*sg, 0);
-            else
-                new_vals = max(s - ref(i), 0);
+    f = 0;
+
+    % 判断频率对称区间
+    if mod(n3,2) == 0
+        endSlice = n3/2 + 1;   % 偶数情况
+    else
+        endSlice = (n3+1)/2;   % 奇数情况
+    end
+
+    for i = 1:endSlice
+        [U, S, V] = svd(Rf(:,:,i), 'econ');
+        s = diag(S);
+
+        if nargin >= 3
+            for iter = 1:max_iter
+                [~, dfs] = fhandle(s,p);
+                s_new = max(s - ref(i)*dfs, 0);
+                if norm(s_new - s, inf) < tol
+                    break;
+                end
+                s = s_new;
             end
-            S_new = diag(new_vals);
-            Gf(:,:,i) = U * S_new * V'; % 在频域计算后再整体 ifft
+        else
+            s_new = max(s - ref(i), 0);
         end
-        G = ifft(Gf, [], 3);
-        G = squeeze(num2cell(G, [1 2]));
+
+        % 更新目标函数值
+        if nargout > 1
+            if nargin >= 3
+                f = f + sum(fhandle(s_new,p));
+            else
+                f = f + sum(s_new);
+            end
+        end
+
+        % 更新当前频率块
+        Gf(:,:,i) = U * diag(s_new) * V';
+
+        % 共轭对称补全另一半频率块
+        if i > 1
+            if mod(n3,2) == 0 && i < n3/2 + 1
+                % 偶数，补前半部分共轭
+                Gf(:,:,n3-i+2) = conj(Gf(:,:,i));
+            elseif mod(n3,2) == 1 && i <= (n3-1)/2
+                % 奇数，补前半部分共轭
+                Gf(:,:,n3-i+2) = conj(Gf(:,:,i));
+            end
+        end
+    end
+
+    % 偶数 Nyquist 频率必须实数
+    if mod(n3,2) == 0
+        Gf(:,:,n3/2+1) = real(Gf(:,:,n3/2+1));
+    end
+
+    % 逆 FFT 保证实数
+    % G = ifft(Gf, [], 3);
+    G = ifft(Gf, [], 3, 'symmetric');
+    G = shiftdim(G,1);
+    G = squeeze(num2cell(G, [1 2]));
 end
