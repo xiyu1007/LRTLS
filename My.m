@@ -25,11 +25,13 @@ classdef My
         h;
         t;
         
-        n;  
-        M;    
-        d;       
+        % 数据维度
+        n;   % 样本数
+        M;     % 视图数
+        d;        % 各视图特征维度[]
         c;  
         
+        % 优化变量
         W;     
         A;
         Z;
@@ -63,6 +65,7 @@ classdef My
             obj.eta = params(6);
             obj.h = 5;
             obj.t = obj.h;
+            % obj.mu = 0;
         end
 
         % Initialize
@@ -216,10 +219,10 @@ classdef My
             Q = term1 \ term2;
         end
 
-        function G = updateG(obj)
+        function [G,fTnn] = updateG(obj)
             ref = 1 / obj.rho;
             Rt = cat(3, obj.Z{:}) - (cat(3, obj.R{:}) ./obj.rho);
-            G = TNN(Rt,ref);
+            [G,fTnn] = TNN(Rt,ref);
         end
 
         function [R,rho] = updateLagrange(obj)
@@ -235,7 +238,7 @@ classdef My
             rho = min(obj.rho_max,delta*rho);
         end
 
-        function [f,df] = Fun(obj, X, Y)
+        function [f,df] = Fun(obj, X, Y,fTnn)
             Z = obj.Z;
             W = obj.W;
             A = obj.A;
@@ -254,10 +257,14 @@ classdef My
             f1 = 0;
             f2 = 0;
             f3 = 0;
+            if nargin > 3
+                f3 = fTnn;
+            end
             f4 = 0;
             f5 = 0; 
             f6 = 0;
             f8 = 0;
+            % f9 = 0;
             fw = 0;
             rho = obj.rho;
             rho2 = rho / 2;
@@ -272,8 +279,11 @@ classdef My
                 norm2W = vecnorm(W{m},2,2);
                 [wrow, ~] = Geman(norm2W, mu);
                 f2 = f2 + sum(wrow);
-                [~,Sg,~] = svd(G{m},'econ');
-                f3 = f3 + sum(diag(Sg));
+                if nargin <= 3
+                    [~,Sg,~] = svd(G{m},'econ');
+                    f3 = f3 + sum(diag(Sg));
+                end
+
                 for u=m:obj.M
                     f4 = f4 + trace(D{m}'*D{u});
                 end
@@ -282,12 +292,15 @@ classdef My
                 fw = fw + obj.tol*norm(W{m},'fro')^2;
             end
             f = alpha* f1 + beta*f2 + f3 + lambda*f4  + gamma*f5 + eta*f6 + rho2*(f8) + fw;
+            % f = alpha* f1 + beta*f2 + f3 + lambda*f4  + gamma*f5 + eta*f6 + rho2*(f8) + mu*f9 + fw ;
             df = 0;
         end
-    
+
         function obj = run(obj,X,Y,param,seed)
             warning('off');
             % obj.verbose = 1;
+            % obj.keyboard = 1;
+            % profile on
             if obj.verbose
                 warning('on');
             end
@@ -304,22 +317,23 @@ classdef My
             obj.F = invD * Y;
 
             [fo,~] = obj.Fun(X,Y);
-
+            fTnn = 0;
+            obj = obj.time(1);
             for iter = 1:max_iter
                 obj.W = obj.updateW(X);
                 obj.A = obj.updateA(X);
                 obj.Q = obj.updateQ(Y);   
-                obj.G = obj.updateG();
+                [obj.G,fTnn] = obj.updateG();
                 obj.Z = obj.updateZ(X,Y);
                 obj.D = obj.updateD(X);       
                 obj.F = obj.updateF(Y);
                 [obj.R,obj.rho] = obj.updateLagrange();
-                
+
                 C1 = 0;
                 for m=1:M
                     C1 = max( C1, norm(obj.G{m} - obj.Z{m}, Inf) );
                 end
-                [f,~] = obj.Fun(X,Y);
+                [f,~] = obj.Fun(X,Y,fTnn);
                 obj.Loss(iter) = f;
                 obj.Err(1,iter) = C1;
                 rate = (fo - f)/fo;
@@ -329,15 +343,18 @@ classdef My
                 fo = f;
             end
 
-            if obj.verbose
+            if obj.verbose % || 1
                 figure
                 linew = 1.2;
+                % 归一化处理
                 norm_Loss = obj.Loss ./ max(obj.Loss);
-                norm_Err = obj.Err ./ max(obj.Err, [], 2);
+                norm_Err = obj.Err ./ max(obj.Err, [], 2); % 每行分别归一化
+                % 绘图
                 plot(norm_Loss, 'LineWidth', linew); hold on;
                 for i = 1:size(obj.Err,1)
                     plot(norm_Err(i,:), 'LineWidth', linew);
                 end
+                % 图例标签
                 legend({...
                     '$\mathrm{Loss}$','$\|\mathcal{G} - \mathcal{Z}\|_\infty$'}, ...
                     'Interpreter', 'latex', 'FontSize', 11, 'Location', 'northeast');
@@ -347,19 +364,25 @@ classdef My
                 yticks(0:0.2:1);
                 grid on;
                 title('Loss and Convergence Conditions', 'Interpreter', 'latex');
+                % fig = gcf;
+                % exportgraphics(fig, ['Analyze\Fig\','Loss_A1.pdf'], 'ContentType', 'vector');
+                % close;
             end
+            % profile viewer
         end
 
         function parameter = init_param(~,fix)
             if nargin < 2
                 fix = [Inf, Inf, Inf, Inf, Inf Inf, Inf, Inf, Inf];
             end
+            
             alphaSpace = [0.01 0.1 0.5 1 5 10 100];
             betaSpace = [0.01 0.1 0.5 1 5 10 100];
             muSpace = [0.1 0.3 0.5 1 5 10];
             lambdaSpace = [0.001 0.01 0.1 0.5 1 5 10 50 100 1000];
             gammaSpace = [0.01 0.1 0.5 1 5 10 100];
             etaSpace = [0.1 1 10 50 100 1000];
+            % hSpace = [5 10 20 30 40 50 100];
 
             if fix(1) ~= Inf
                 alphaSpace = fix(1);
@@ -381,6 +404,7 @@ classdef My
             end
 
             paramSpace = {alphaSpace, betaSpace, muSpace, lambdaSpace, gammaSpace, etaSpace};
+            % paramSpace = {alphaSpace, betaSpace, lambdaSpace, gammaSpace, etaSpace,muSpace,hSpace};
             parameter = combvec(paramSpace{:})';
             parameter = sortrows(parameter, 'ascend');
         end
