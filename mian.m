@@ -31,8 +31,8 @@ for m = 1:M
 end
 
 %% run
-method = 'My';
-params = My().init_param([0.01,0.5,0.5,0.5,0.5,100]);
+method = 'LRTLS';
+params = LRTLS().init_param([0.01,0.5,0.5,0.5,0.5,100]);
 
 ins = feval(method);
 param = params(1,:);
