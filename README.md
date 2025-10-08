@@ -1,2 +1,2 @@
 # LRTLS
-Low-Rank Tensor Latent Space Learning (LRTLS) for multimodal feature selection  in AD diagnosis.
+Low-Rank Tensor Latent Space Learning for Multimodal Feature Selection in Alzheimer’s Disease Diagnosis
