@@ -1,14 +1,11 @@
-function [G,f] = TNN(R,ref,fhandle,p,tol,max_iter)
-    % R : d * n * Views
-    if nargin < 5
-        tol = 1e-4; 
-    end
-    if nargin < 6
-        max_iter = 100;
-    end
-
+function [G,f] = TNN(R,ref,dim,fhandle,p,tol,max_iter)
+    % R : h * n * Views
+    % dim in {0,1,2}
+    if nargin < 6, tol = 1e-4; end
+    if nargin < 7, max_iter = 100; end
+    if nargin < 3 || isempty(dim), dim = 0; end
     % 调整维度
-    R = shiftdim(R,2);
+    R = shiftdim(R,dim);
     [~, ~, n3] = size(R);
     if isscalar(ref)
         ref = repmat(ref, 1, n3);
@@ -31,7 +28,7 @@ function [G,f] = TNN(R,ref,fhandle,p,tol,max_iter)
         [U, S, V] = svd(Rf(:,:,i), 'econ');
         s = diag(S);
 
-        if nargin >= 3
+        if nargin >= 4
             for iter = 1:max_iter
                 [~, dfs] = fhandle(s,p);
                 s_new = max(s - ref(i)*dfs, 0);
@@ -46,7 +43,7 @@ function [G,f] = TNN(R,ref,fhandle,p,tol,max_iter)
 
         % 更新目标函数值
         if nargout > 1
-            if nargin >= 3
+            if nargin >= 4
                 f = f + sum(fhandle(s_new,p));
             else
                 f = f + sum(s_new);
@@ -76,6 +73,6 @@ function [G,f] = TNN(R,ref,fhandle,p,tol,max_iter)
     % 逆 FFT 保证实数
     % G = ifft(Gf, [], 3);
     G = ifft(Gf, [], 3, 'symmetric');
-    G = shiftdim(G,1);
+    G = shiftdim(G,3-dim);
     G = squeeze(num2cell(G, [1 2]));
 end
